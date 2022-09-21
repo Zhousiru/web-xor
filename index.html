@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web-XOR</title>
+  </head>
+
+  <body>
+    <h1>Web-XOR</h1>
+    <button onclick="fetchData()">Fetch Raw Data</button>
+    <br />
+    <button onclick="runWasm()">Run WASM</button>
+    <button onclick="runJs()">Run JS</button>
+    <br />
+    <button onclick="cleanup()">Clear Results</button>
+    <div style="display: flex">
+      <div id="wasm">
+        <h2>WASM Results</h2>
+        <div>Text:</div>
+        <div class="text"></div>
+        <div>Image:</div>
+        <img class="image" width="200px" />
+        <div>Elapsed time (ms): <span class="time"></span></div>
+      </div>
+      <div id="js" style="margin-left: 2rem">
+        <h2>JS Results</h2>
+        <div>Text:</div>
+        <div class="text"></div>
+        <div>Image:</div>
+        <img class="image" width="200px" />
+        <div>Elapsed time (ms): <span class="time"></span></div>
+      </div>
+    </div>
+  </body>
+  <script src="./assets/wasm_exec.js"></script>
+  <script>
+    const go = new Go();
+    WebAssembly.instantiateStreaming(
+      fetch("./assets/crypto.wasm"),
+      go.importObject
+    ).then((result) => go.run(result.instance));
+
+    let bText;
+    let bImage;
+
+    function cleanup() {
+      document.querySelector("#wasm .text").innerHTML = "";
+      document.querySelector("#wasm .image").src = "";
+      document.querySelector("#wasm .time").innerHTML = "";
+      document.querySelector("#js .text").innerHTML = "";
+      document.querySelector("#js .image").src = "";
+      document.querySelector("#js .time").innerHTML = "";
+    }
+
+    async function fetchData() {
+      try {
+        let r = await fetch("http://localhost:8080/image");
+        buffer = await r.arrayBuffer();
+        bImage = new Uint8Array(buffer);
+        bImage.buffer = buffer;
+      } catch (e) {
+        console.log("Fetch Image:", e);
+      }
+
+      try {
+        let r = await fetch("http://localhost:8080/text");
+        buffer = await r.arrayBuffer();
+        bText = new Uint8Array(buffer);
+        bText.buffer = buffer;
+      } catch (e) {
+        console.log("Fetch Text:", e);
+      }
+    }
+
+    async function runWasm() {
+      const start = Date.now();
+
+      let image = wasm.crypto(bImage, "testkey");
+      let u8Arr = Uint8Array.from(atob(image), (c) => c.charCodeAt(0));
+      let imageBlob = new Blob([u8Arr], {
+        type: "image/png",
+      });
+
+      document.querySelector("#wasm .image").src =
+        window.URL.createObjectURL(imageBlob);
+
+      document.querySelector("#wasm .text").innerHTML = window.atob(
+        wasm.crypto(bText, "testkey")
+      );
+
+      document.querySelector("#wasm .time").innerHTML = Date.now() - start;
+    }
+
+    function xor(u8Arr, key) {
+      let keyArr = [];
+      for (let i = 0, j = key.length; i < j; i++) {
+        keyArr.push(key.charCodeAt(i));
+      }
+      let uint8Key = new Uint8Array(keyArr);
+
+      let keyLen = uint8Key.length;
+      let r = new Uint8Array(u8Arr);
+      for (let i = 0; i < u8Arr.length; i++) {
+        r[i] = u8Arr[i] ^ uint8Key[i % keyLen];
+      }
+
+      return r;
+    }
+
+    function runJs() {
+      const start = Date.now();
+
+      let u8Image = xor(bImage, "testkey");
+
+      let imageBlob = new Blob([u8Image.buffer], {
+        type: "image/png",
+      });
+
+      document.querySelector("#js .image").src =
+        window.URL.createObjectURL(imageBlob);
+
+      document.querySelector("#js .text").innerHTML = new TextDecoder().decode(
+        xor(bText, "testkey")
+      );
+
+      document.querySelector("#js .time").innerHTML = Date.now() - start;
+    }
+  </script>
+</html>
